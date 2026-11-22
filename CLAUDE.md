@@ -47,7 +47,7 @@ Settings are in `backend/app/core/config.py` (pydantic-settings; env names = fie
 ## Architecture
 
 ### Run lifecycle
-`POST /api/campaigns/{id}/start` resets the campaign, launches `run_campaign` as a background `asyncio` task (`app/main.py`) and returns immediately. `GET .../events` is Server-Sent Events: it replays stored history, then streams live events until `done`. The UI (`LiveExecution.tsx`) folds those events into per-node cards.
+`POST /api/campaigns/{id}/start` resets the campaign, launches `run_campaign` as a background `asyncio` task (`app/main.py`) and returns immediately. `GET .../events` is Server-Sent Events: it replays stored history, then streams live events until `done`. The UI folds those events into run state in `frontend/src/useAgentRun.ts` (reducer plus derived candidates, plan progress and stage status). Three views render it: `views/BriefView.tsx` (start a run, My agents), `views/LiveView.tsx` (route rail, thought stream, shortlist board) and `views/ResultsView.tsx` (ranked shortlist, report, feedback). Theme and the highlighter/pin animations live in `theme.ts` and `styles.css`.
 
 ### LangGraph (`backend/app/graph/workflow.py`)
 `understand → discover_tools → plan → agent ⇄ tools → report`.

@@ -46,6 +46,7 @@ export interface Campaign {
 
 export interface AgentEvent {
   seq: number;
+  timestamp?: string;
   type:
     | "node_start" | "node_end" | "tools_available" | "plan"
     | "block_start" | "thinking_delta" | "text_delta" | "block_end"

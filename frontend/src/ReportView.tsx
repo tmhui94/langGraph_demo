@@ -5,7 +5,7 @@ import remarkGfm from "remark-gfm";
 
 // Shared by the on-screen view and the downloaded HTML file.
 const REPORT_CSS = `
-  .report { font-family: "Segoe UI", system-ui, sans-serif; line-height: 1.55; color: #1b2230; }
+  .report { font-family: "Segoe UI", system-ui, sans-serif; line-height: 1.55; color: #14213d; }
   .report h1 { font-size: 1.6rem; margin: 0 0 12px; }
   .report h2 { font-size: 1.15rem; margin: 22px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #dde2ea; }
   .report h3 { font-size: 1rem; margin: 16px 0 6px; }

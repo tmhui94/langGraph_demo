@@ -35,7 +35,7 @@ export default function AgentFeedback({ campaign, toolsUsed }: { campaign: Campa
     <Card variant="outlined" sx={{ borderColor: "secondary.main" }}>
       <CardContent>
         <Stack spacing={2}>
-          <Typography fontWeight={700}>🙋 Your turn: how did the agent do?</Typography>
+          <Typography fontWeight={700}>Your turn: how did the agent do?</Typography>
 
           {step === "rate" && (
             <>
@@ -46,10 +46,10 @@ export default function AgentFeedback({ campaign, toolsUsed }: { campaign: Campa
               <Typography variant="body2">Do you love the output?</Typography>
               <Stack direction="row" spacing={1}>
                 <Button variant="contained" color="success" disabled={!rating} onClick={() => setStep("save")}>
-                  👍 Yes
+                  Yes, I like it
                 </Button>
                 <Button variant="outlined" disabled={!rating} onClick={() => setStep("improve")}>
-                  👎 Not really
+                  Not really
                 </Button>
               </Stack>
             </>
