@@ -2,11 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import { Alert, Box, Button, Chip, Container, Stack, Typography } from "@mui/material";
 import { api, Campaign } from "./api";
 import { toolsUsed, useAgentRun } from "./useAgentRun";
-import BriefView from "./views/BriefView";
+import PromptView from "./views/PromptView";
 import LiveView from "./views/LiveView";
 import ResultsView from "./views/ResultsView";
 
-type View = "brief" | "live" | "results";
+type View = "prompt" | "live" | "results";
 
 function StepButton({ index, label, active, disabled, onClick }: {
   index: number; label: string; active: boolean; disabled: boolean; onClick: () => void;
@@ -21,7 +21,7 @@ function StepButton({ index, label, active, disabled, onClick }: {
 }
 
 export default function App() {
-  const [view, setView] = useState<View>("brief");
+  const [view, setView] = useState<View>("prompt");
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [activeId, setActiveId] = useState<string>();
   const [loadError, setLoadError] = useState(false);
@@ -48,11 +48,6 @@ export default function App() {
     setView("live");
   }
 
-  function open(campaign: Campaign) {
-    setActiveId(campaign.id);
-    setView(campaign.status === "COMPLETED" ? "results" : "live");
-  }
-
   return (
     <Box sx={{ minHeight: "100vh" }}>
       <Box component="header" sx={{ position: "sticky", top: 0, zIndex: 10, bgcolor: "background.paper", borderBottom: "1px solid", borderColor: "divider" }}>
@@ -65,9 +60,9 @@ export default function App() {
               </Typography>
             </Stack>
             <Stack direction="row" component="nav" aria-label="Steps">
-              <StepButton index={1} label="Brief" active={view === "brief"} disabled={false} onClick={() => setView("brief")} />
-              <StepButton index={2} label="Live" active={view === "live"} disabled={!active} onClick={() => setView("live")} />
-              <StepButton index={3} label="Results" active={view === "results"} disabled={!canSeeResults} onClick={() => setView("results")} />
+              <StepButton index={0} label="Prompt" active={view === "prompt"} disabled={false} onClick={() => setView("prompt")} />
+              <StepButton index={1} label="Live" active={view === "live"} disabled={!active} onClick={() => setView("live")} />
+              <StepButton index={2} label="Results" active={view === "results"} disabled={!canSeeResults} onClick={() => setView("results")} />
             </Stack>
             <Chip size="small" variant="outlined" label="Recruiters make the final call" sx={{ display: { xs: "none", md: "inline-flex" } }} />
           </Stack>
@@ -75,12 +70,12 @@ export default function App() {
       </Box>
 
       <Container maxWidth="xl" sx={{ py: { xs: 3, md: 5 } }}>
-        {loadError && view === "brief" && (
+        {loadError && view === "prompt" && (
           <Alert severity="warning" sx={{ mb: 3 }}>
             Cannot reach the backend. Start it, then reload this page.
           </Alert>
         )}
-        {view === "brief" && <BriefView campaigns={campaigns} onStarted={started} onOpen={open} />}
+        {view === "prompt" && <PromptView onStarted={started} />}
         {view === "live" && active && <LiveView campaign={active} run={run} onResults={() => setView("results")} />}
         {view === "results" && active && (
           <ResultsView campaign={active} toolsUsed={toolsUsed(run.sections)} finished={run.done} />

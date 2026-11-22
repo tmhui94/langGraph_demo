@@ -55,6 +55,10 @@ async def create_campaign(payload: CampaignCreate) -> Campaign:
         minimum_candidates=payload.minimum_candidates,
         scoring_weights=payload.scoring_weights,
     )
+    if payload.saved_requirements is not None and payload.saved_plan:
+        campaign.requirements = payload.saved_requirements
+        campaign.plan = payload.saved_plan
+        campaign.reused = True
     return store.save(campaign)
 
 
@@ -84,6 +88,7 @@ async def run_campaign(campaign: Campaign) -> None:
         "preferred": campaign.preferred_qualifications,
         "iterations": 0,
         "limitation": "",
+        "reused": campaign.reused,
     }
     try:
         await workflow.ainvoke(initial, {"recursion_limit": 100})
@@ -116,7 +121,9 @@ async def start_campaign(campaign_id: UUID) -> Campaign:
     bus.reset(campaign_id)
     campaign.status = "RUNNING"
     campaign.candidates, campaign.evaluations = [], []
-    campaign.events, campaign.plan, campaign.summary, campaign.limitation = [], [], "", ""
+    campaign.events, campaign.summary, campaign.limitation = [], "", ""
+    if not campaign.reused:  # a saved agent keeps its requirements and plan
+        campaign.plan = []
     store.save(campaign)
     task = asyncio.create_task(run_campaign(campaign))
     _background.add(task)  # keep a reference so the task is not garbage collected

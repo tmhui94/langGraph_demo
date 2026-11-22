@@ -70,16 +70,28 @@ function ToolRow({ call }: { call: Call }) {
   );
 }
 
+const FIELD_LABELS: Record<string, string> = {
+  job_title: "Job title",
+  location: "Location",
+  candidates_wanted: "How many candidates",
+};
+
+const sentence = (key: string) => key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, " ");
+
 function Requirements({ text }: { text: string }) {
-  const data = tryJson(text) as Record<string, string[]> | undefined;
+  const data = tryJson(text) as Record<string, unknown> | undefined;
   if (!data) return <Typography component="pre" sx={{ m: 0, fontFamily: "var(--mono)", fontSize: "0.78rem", whiteSpace: "pre-wrap" }}>{text}</Typography>;
+  // Single values (job title, location, count) are the inputs a saved agent asks for: highlight them.
+  const entries = Object.entries(data).filter(([, v]) => (Array.isArray(v) ? v.length > 0 : v !== "" && v !== 0 && v != null));
   return (
     <Stack spacing={1.25}>
-      {Object.entries(data).map(([key, values]) => (
+      {entries.map(([key, value]) => (
         <Box key={key}>
-          <Typography variant="body2" fontWeight={600} sx={{ textTransform: "capitalize" }}>{key.replace(/_/g, " ")}</Typography>
+          <Typography variant="body2" fontWeight={600}>{FIELD_LABELS[key] ?? sentence(key)}</Typography>
           <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-            {values.map((v) => <Chip key={v} size="small" label={v} />)}
+            {Array.isArray(value)
+              ? value.map((v) => <Chip key={String(v)} size="small" label={String(v)} />)
+              : <Typography component="span" className="hl" sx={{ px: 0.25, fontWeight: 600 }}>{String(value)}</Typography>}
           </Stack>
         </Box>
       ))}
@@ -99,6 +111,11 @@ function titleOf(s: Section) {
 }
 
 function summaryOf(s: Section, live: boolean): string {
+  const base = baseSummary(s, live);
+  return s.reused ? `Reused from the saved agent. ${base}` : base;
+}
+
+function baseSummary(s: Section, live: boolean): string {
   const blocks = Object.values(s.blocks);
   const text = blocks.find((b) => b.kind === "text");
   switch (s.node) {
@@ -121,6 +138,12 @@ function StepBody({ section }: { section: Section }) {
   const blocks = Object.entries(section.blocks).sort(([a], [b]) => Number(a) - Number(b));
   return (
     <Stack spacing={1.5} sx={{ pt: 1.5 }}>
+      {section.reused && (
+        <Box sx={{ borderLeft: "4px solid var(--high)", pl: 1.75, py: 0.5 }}>
+          <Typography fontWeight={600}>No AI call needed</Typography>
+          <Typography variant="body2" color="text.secondary">{section.reused} Only the inputs you changed are new.</Typography>
+        </Box>
+      )}
       {section.tools && (
         <Stack spacing={0.75}>
           {section.tools.map((t) => (

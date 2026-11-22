@@ -24,17 +24,22 @@ class ScoringWeights(BaseModel):
 
 
 class CampaignCreate(BaseModel):
-    job_title: str
+    job_title: str = ""
     job_description: str
     location: str = ""
     mandatory_qualifications: list[str] = Field(default_factory=list)
     preferred_qualifications: list[str] = Field(default_factory=list)
     minimum_candidates: int = 20
     scoring_weights: ScoringWeights = Field(default_factory=ScoringWeights)
+    # Re-running a saved agent: reuse its requirements and plan instead of asking the AI again.
+    saved_requirements: "JobRequirements | None" = None
+    saved_plan: list[dict[str, Any]] | None = None
 
 
 class JobRequirements(BaseModel):
     job_title: str
+    location: str = ""
+    candidates_wanted: int = 0
     mandatory: list[str] = Field(default_factory=list)
     preferred: list[str] = Field(default_factory=list)
     technical_skills: list[str] = Field(default_factory=list)
@@ -105,4 +110,8 @@ class Campaign(BaseModel):
     plan: list[dict[str, Any]] = Field(default_factory=list)
     summary: str = ""
     limitation: str = ""
+    reused: bool = False
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+CampaignCreate.model_rebuild()

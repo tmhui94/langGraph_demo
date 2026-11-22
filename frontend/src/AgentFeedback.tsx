@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Alert, Button, Card, CardContent, Rating, Stack, TextField, Typography } from "@mui/material";
+import { Alert, Box, Button, Card, CardContent, Chip, Rating, Stack, TextField, Typography } from "@mui/material";
 import { Campaign } from "./api";
-import { findByCampaign, SavedAgent, saveAgent } from "./savedAgents";
+import { toolLabel } from "./labels";
+import { findByCampaign, SavedAgent, saveAgent, variablesFrom } from "./savedAgents";
 
 type Step = "rate" | "improve" | "thanks" | "save" | "declined" | "saved";
 
@@ -10,20 +11,24 @@ export default function AgentFeedback({ campaign, toolsUsed }: { campaign: Campa
   const [step, setStep] = useState<Step>(existing ? "saved" : "rate");
   const [rating, setRating] = useState<number | null>(existing?.rating ?? null);
   const [comment, setComment] = useState("");
-  const [name, setName] = useState(`${campaign.job_title} sourcer · ${campaign.location}`);
+  const [name, setName] = useState(`${campaign.job_title} sourcer`);
   const [saved, setSaved] = useState<SavedAgent | undefined>(existing);
 
+  const requirements = campaign.requirements ?? undefined;
+  const variables = requirements ? variablesFrom(requirements, campaign) : [];
+  const plan = campaign.plan ?? [];
+
   function save() {
+    if (!requirements) return;
     const count = (category: string) => campaign.evaluations.filter((e) => e.category === category).length;
     const agent = saveAgent({
       name: name.trim() || campaign.job_title,
       rating: rating ?? 0,
       sourceCampaignId: campaign.id,
-      jobTitle: campaign.job_title,
-      location: campaign.location,
-      jobDescription: campaign.job_description,
-      minimumCandidates: campaign.minimum_candidates,
-      plan: campaign.plan ?? [],
+      prompt: campaign.job_description,
+      variables,
+      requirements,
+      plan,
       toolsUsed,
       result: { found: campaign.candidates.length, high: count("HIGH"), medium: count("MEDIUM"), low: count("LOW") },
     });
@@ -82,13 +87,37 @@ export default function AgentFeedback({ campaign, toolsUsed }: { campaign: Campa
           {step === "save" && (
             <>
               <Typography variant="body2">
-                Glad it worked. Save this as a new agent so you can run it again next time?
-                It keeps the job inputs, the plan Claude made, and the tools it used
-                ({toolsUsed.join(", ") || "none"}).
+                Glad it worked. Save it as an agent and next time nobody has to write the prompt again,
+                and the AI doesn't have to re-think the plan. It keeps the steps below and asks only for these inputs.
               </Typography>
+              <Box className="brief-grid" sx={{ gap: "24px !important" }}>
+                <Box>
+                  <Typography fontWeight={700} sx={{ mb: 1 }}>Inputs the agent will ask for next time</Typography>
+                  <Stack spacing={1}>
+                    {variables.map((v) => (
+                      <Box key={v.key}>
+                        <Typography variant="body2" color="text.secondary">{v.label}</Typography>
+                        <Typography className="hl" component="span" sx={{ px: 0.25 }}>{v.value || "(not stated)"}</Typography>
+                      </Box>
+                    ))}
+                  </Stack>
+                </Box>
+                <Box>
+                  <Typography fontWeight={700} sx={{ mb: 1 }}>Saved steps</Typography>
+                  <Box component="ol" sx={{ m: 0, pl: 3, display: "grid", gap: 0.75 }}>
+                    {plan.map((step) => (
+                      <li key={step.step}>
+                        <Chip size="small" label={step.tool === "none" ? "Think" : toolLabel(step.tool)} sx={{ mr: 1 }} />
+                        <Typography component="span" variant="body2" color="text.secondary">{step.purpose}</Typography>
+                      </li>
+                    ))}
+                  </Box>
+                </Box>
+              </Box>
+              {!requirements && <Alert severity="warning">This run has no saved requirements, so it can't be saved as an agent.</Alert>}
               <TextField id="agent-name" label="Agent name" value={name} onChange={(event) => setName(event.target.value)} />
               <Stack direction="row" spacing={1}>
-                <Button variant="contained" onClick={save}>Save agent</Button>
+                <Button variant="contained" onClick={save} disabled={!requirements}>Save agent</Button>
                 <Button onClick={() => setStep("declined")}>No thanks</Button>
               </Stack>
             </>
@@ -99,7 +128,7 @@ export default function AgentFeedback({ campaign, toolsUsed }: { campaign: Campa
           {step === "saved" && saved && (
             <Alert severity="success">
               Saved as <strong>{saved.name}</strong> (v{saved.version}). Find it under
-              Create Campaign → My agents to run it again.
+              Prompt, in My agents, to run it again with new inputs.
             </Alert>
           )}
         </Stack>

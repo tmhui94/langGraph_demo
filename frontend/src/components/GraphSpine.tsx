@@ -16,8 +16,8 @@ function Dot({ status }: { status: StageStatus }) {
 }
 
 /** The real LangGraph nodes as a vertical rail. The agent's own plan hangs under "Plan". */
-export default function GraphSpine({ statuses, agentSteps, plan }: {
-  statuses: Record<StageNode, StageStatus>; agentSteps: number; plan: PlanStep[];
+export default function GraphSpine({ statuses, agentSteps, plan, reused = [] }: {
+  statuses: Record<StageNode, StageStatus>; agentSteps: number; plan: PlanStep[]; reused?: string[];
 }) {
   return (
     <Box component="nav" aria-label="Agent progress" className="sticky">
@@ -38,6 +38,9 @@ export default function GraphSpine({ statuses, agentSteps, plan }: {
                 sx={{ fontFamily: "var(--display)", fontSize: "1.05rem", px: 0.25 }}>
                 {stage.title}
               </Typography>
+              {reused.includes(stage.node) && (
+                <Typography variant="body2" sx={{ color: "var(--high)", fontWeight: 600 }}>Reused, no AI call</Typography>
+              )}
               {stage.node === "agent" && agentSteps > 0 && (
                 <Typography variant="body2" color="text.secondary">
                   {agentSteps} {agentSteps === 1 ? "step" : "steps"} so far

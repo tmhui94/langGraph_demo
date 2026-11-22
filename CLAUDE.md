@@ -47,7 +47,7 @@ Settings are in `backend/app/core/config.py` (pydantic-settings; env names = fie
 ## Architecture
 
 ### Run lifecycle
-`POST /api/campaigns/{id}/start` resets the campaign, launches `run_campaign` as a background `asyncio` task (`app/main.py`) and returns immediately. `GET .../events` is Server-Sent Events: it replays stored history, then streams live events until `done`. The UI folds those events into run state in `frontend/src/useAgentRun.ts` (reducer plus derived candidates, plan progress and stage status). Three views render it: `views/BriefView.tsx` (start a run, My agents), `views/LiveView.tsx` (route rail, thought stream, shortlist board) and `views/ResultsView.tsx` (ranked shortlist, report, feedback). Theme and the highlighter/pin animations live in `theme.ts` and `styles.css`.
+`POST /api/campaigns/{id}/start` resets the campaign, launches `run_campaign` as a background `asyncio` task (`app/main.py`) and returns immediately. `GET .../events` is Server-Sent Events: it replays stored history, then streams live events until `done`. The UI folds those events into run state in `frontend/src/useAgentRun.ts` (reducer plus derived candidates, plan progress and stage status). Three views render it: `views/PromptView.tsx` (free-text prompt, My agents with editable inputs), `views/LiveView.tsx` (route rail, thought stream, shortlist board) and `views/ResultsView.tsx` (ranked shortlist, report, feedback). Theme and the highlighter/pin animations live in `theme.ts` and `styles.css`.
 
 ### LangGraph (`backend/app/graph/workflow.py`)
 `understand → discover_tools → plan → agent ⇄ tools → report`.
@@ -55,6 +55,7 @@ Settings are in `backend/app/core/config.py` (pydantic-settings; env names = fie
 - `tools` runs all `tool_use` blocks concurrently and returns **all** results in a single user message (`is_error: True` for failures).
 - `GraphState.messages` holds the Anthropic conversation. Assistant turns are stored exactly as returned (thinking blocks included); don't strip or rewrite them.
 - A node name must not equal a state key (LangGraph raises), which is why the plan is stored as `plan_steps`.
+- **Saved agents:** `CampaignCreate.saved_requirements` + `saved_plan` set `campaign.reused`. Then `understand_node` and `plan_node` publish a `reused` event and skip their LLM calls. `apply_variables` writes the extracted job title, location and count (from a free-text prompt) back to the campaign and state. Saved agents themselves live in the browser (`frontend/src/savedAgents.ts`, key `savedAgents.v2`).
 - `traced(...)` wraps each node to publish `node_start`/`node_end` and update `campaign.status`. The graph is invoked with `recursion_limit=100` because the loop needs more than the default 25 supersteps.
 - Nodes also write progress to the `store` singleton, so keep state updates and `store.save` in sync.
 

@@ -28,6 +28,19 @@ export interface Evaluation {
   recruiter_review_required: boolean;
 }
 
+export interface Requirements {
+  job_title: string;
+  location: string;
+  candidates_wanted: number;
+  mandatory: string[];
+  preferred: string[];
+  technical_skills: string[];
+  industries: string[];
+  alternative_titles: string[];
+  knockout_criteria: string[];
+  search_queries?: string[];
+}
+
 export interface Campaign {
   id: string;
   job_title: string;
@@ -41,6 +54,8 @@ export interface Campaign {
   limitation: string;
   plan: { step: number; tool: string; purpose: string }[];
   summary: string;
+  requirements?: Requirements | null;
+  reused?: boolean;
   created_at: string;
 }
 
@@ -50,7 +65,7 @@ export interface AgentEvent {
   type:
     | "node_start" | "node_end" | "tools_available" | "plan"
     | "block_start" | "thinking_delta" | "text_delta" | "block_end"
-    | "tool_call" | "tool_result" | "error" | "done";
+    | "tool_call" | "tool_result" | "reused" | "error" | "done";
   node?: string;
   step?: number | null;
   label?: string;

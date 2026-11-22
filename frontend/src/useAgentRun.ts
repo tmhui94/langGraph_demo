@@ -19,6 +19,7 @@ export interface Section {
   calls: Call[];
   tools?: { name: string; description: string }[];
   plan?: { step: number; tool: string; purpose: string }[];
+  reused?: string;
 }
 export interface RunState {
   sections: Section[];
@@ -75,6 +76,7 @@ export function reducer(state: RunState, action: AgentEvent | { type: "reset" })
     case "node_end": section.running = false; break;
     case "tools_available": section.tools = e.tools; break;
     case "plan": section.plan = e.steps; break;
+    case "reused": section.reused = e.detail; break;
     case "block_start":
       if (e.kind !== "tool_use") section.blocks[e.block!] = { kind: e.kind!, text: "", done: false };
       break;
@@ -208,6 +210,14 @@ export function planProgress(sections: Section[]) {
   const used = new Set(sections.flatMap((s) => s.calls.map((c) => c.tool)));
   const acting = sections.some((s) => s.node === "agent");
   return plan.map((step) => ({ ...step, done: step.tool === "none" ? acting : used.has(step.tool) }));
+}
+
+/** Job title and location the agent read from a free-text request (from the Understand step). */
+export function requestedRole(sections: Section[]): { title?: string; location?: string } {
+  const text = Object.values(sections.find((s) => s.node === "understand")?.blocks ?? {})
+    .find((b) => b.kind === "text" && b.done)?.text;
+  const data = parse(text);
+  return { title: data?.job_title || undefined, location: data?.location || undefined };
 }
 
 export function countCalls(sections: Section[]) {

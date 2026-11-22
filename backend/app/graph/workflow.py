@@ -71,6 +71,10 @@ REPORT_SYSTEM = (
 REQUIREMENTS_SCHEMA = {
     "type": "object",
     "properties": {
+        # The variables a saved agent will ask for next time.
+        "job_title": {"type": "string"},
+        "location": {"type": "string", "description": "Empty string if not stated"},
+        "candidates_wanted": {"type": "integer", "description": "How many candidates were asked for; 0 if not stated"},
         "mandatory": {"type": "array", "items": {"type": "string"}},
         "preferred": {"type": "array", "items": {"type": "string"}},
         "technical_skills": {"type": "array", "items": {"type": "string"}},
@@ -111,6 +115,7 @@ class GraphState(TypedDict, total=False):
     messages: list[dict[str, Any]]
     iterations: int
     limitation: str
+    reused: bool
 
 
 def traced(name: str):
@@ -136,9 +141,36 @@ def traced(name: str):
     return decorator
 
 
+REUSED_NOTE = "Reused from the saved agent, so no AI call was needed."
+
+
+def apply_variables(state: GraphState, requirements: JobRequirements) -> dict:
+    """Write the job title, location and count found in the request back to the campaign and state."""
+    campaign = store.get(UUID(state["campaign_id"]))
+    campaign.requirements = requirements
+    campaign.job_title = requirements.job_title or campaign.job_title or "Untitled role"
+    campaign.location = requirements.location or campaign.location
+    if requirements.candidates_wanted > 0:
+        campaign.minimum_candidates = requirements.candidates_wanted
+    store.save(campaign)
+    return {
+        "requirements": requirements,
+        "job_title": campaign.job_title,
+        "location": campaign.location,
+        "minimum_candidates": campaign.minimum_candidates,
+    }
+
+
 @traced("understand")
 async def understand_node(state: GraphState) -> dict:
     cid = state["campaign_id"]
+    if state.get("reused"):
+        requirements = store.get(UUID(cid)).requirements
+        bus.publish(cid, {"type": "reused", "node": "understand", "detail": REUSED_NOTE})
+        bus.publish(cid, {"type": "block_end", "node": "understand", "block": 0, "kind": "text",
+                          "text": json.dumps(requirements.model_dump(exclude={"search_queries"}))})
+        return apply_variables(state, requirements)
+
     message = await stream_claude(
         cid, "understand",
         system=UNDERSTAND_SYSTEM,
@@ -154,11 +186,9 @@ async def understand_node(state: GraphState) -> dict:
     )
     if message.stop_reason not in ("end_turn", "stop_sequence"):
         raise RuntimeError(f"Could not extract requirements (stop_reason={message.stop_reason})")
-    requirements = JobRequirements(job_title=state["job_title"], **json_of(message))
-    campaign = store.get(UUID(cid))
-    campaign.requirements = requirements
-    store.save(campaign)
-    return {"requirements": requirements}
+    data = json_of(message)
+    data["job_title"] = data.get("job_title") or state["job_title"]
+    return apply_variables(state, JobRequirements(**data))
 
 
 @traced("discover_tools")
@@ -173,6 +203,12 @@ async def discover_tools_node(state: GraphState) -> dict:
 async def plan_node(state: GraphState) -> dict:
     cid = state["campaign_id"]
     requirements = state["requirements"]
+    if state.get("reused"):
+        plan = store.get(UUID(cid)).plan
+        bus.publish(cid, {"type": "reused", "node": "plan", "detail": REUSED_NOTE})
+        bus.publish(cid, {"type": "plan", "node": "plan", "steps": plan})
+        return first_agent_turn(state, requirements, plan)
+
     message = await stream_claude(
         cid, "plan",
         system=PLAN_SYSTEM,
@@ -192,7 +228,10 @@ async def plan_node(state: GraphState) -> dict:
     campaign = store.get(UUID(cid))
     campaign.plan = plan
     store.save(campaign)
+    return first_agent_turn(state, requirements, plan)
 
+
+def first_agent_turn(state: GraphState, requirements: JobRequirements, plan: list[dict]) -> dict:
     first = {
         "role": "user",
         "content": json.dumps({

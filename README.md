@@ -63,6 +63,18 @@ and scores candidates. Without it a run stops immediately with an error instead 
 Defaults: `CLAUDE_API_MODEL=claude-opus-5-5`, `CLAUDE_EFFORT=medium` (`low` to `max`; lower is cheaper
 and faster), `MAX_AGENT_ITERATIONS=12` (cap on agent/tool steps).
 
+## Demo flow: Prompt, Live, Results
+
+1. **Prompt:** type a request in your own words. The agent pulls out the job title, location, how many
+   candidates and the must-haves.
+2. **Live:** watch it understand, plan, search, read, record and score, with its reasoning streaming in.
+3. **Results:** a ranked shortlist and briefing. Rate the run, and if you like it, **save it as an agent**.
+   The agent keeps the steps it worked out and asks only for the inputs that change.
+
+Saved agents appear under **My agents** on the Prompt step (stored in the browser). Running one sends the
+saved requirements and plan to the backend (`saved_requirements`, `saved_plan`), so the Understand and
+Plan steps are reused with **no AI call**. Only the search loop and the report use the AI again.
+
 ## How the agent works (the demo)
 
 The **Live Execution** tab shows the LangGraph run as it happens:

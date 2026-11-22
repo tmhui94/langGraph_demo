@@ -5,7 +5,7 @@ import ShortlistBoard from "../components/ShortlistBoard";
 import ThoughtStream from "../components/ThoughtStream";
 import { clock } from "../labels";
 import {
-  RunState, countCalls, deriveCandidates, planProgress, stageStatuses, useElapsedSeconds,
+  RunState, countCalls, deriveCandidates, planProgress, requestedRole, stageStatuses, useElapsedSeconds,
 } from "../useAgentRun";
 
 function Stat({ label, value }: { label: string; value: string | number }) {
@@ -26,14 +26,17 @@ export default function LiveView({ campaign, run, onResults }: {
   const candidates = deriveCandidates(run.sections);
   const scored = candidates.filter((c) => c.score !== undefined).length;
   const agentSteps = run.sections.filter((s) => s.node === "agent").length;
+  const role = requestedRole(run.sections);
+  const title = campaign.job_title || role.title || "Reading your request...";
+  const location = campaign.location || role.location || "";
 
   return (
     <Stack spacing={3}>
       <Box sx={{ position: { xs: "static", md: "sticky" }, top: 61, zIndex: 5, bgcolor: "background.default", py: { md: 1.5 }, borderBottom: { md: "1px solid" }, borderColor: "divider" }}>
       <Stack direction={{ xs: "column", md: "row" }} spacing={{ xs: 2, md: 6 }} justifyContent="space-between" alignItems={{ md: "flex-end" }}>
         <Box sx={{ minWidth: 0 }}>
-          <Typography variant="h3" sx={{ fontSize: { xs: "1.7rem", md: "2.2rem" } }}>{campaign.job_title}</Typography>
-          <Typography color="text.secondary">{campaign.location}</Typography>
+          <Typography variant="h3" sx={{ fontSize: { xs: "1.7rem", md: "2.2rem" } }}>{title}</Typography>
+          <Typography color="text.secondary">{location}{campaign.reused ? " (saved agent)" : ""}</Typography>
         </Box>
         <Stack direction="row" spacing={4}>
           <Stat label="Elapsed" value={clock(elapsed)} />
@@ -56,7 +59,8 @@ export default function LiveView({ campaign, run, onResults }: {
       )}
 
       <Box className="live-grid">
-        <GraphSpine statuses={stageStatuses(run)} agentSteps={agentSteps} plan={planProgress(run.sections)} />
+        <GraphSpine statuses={stageStatuses(run)} agentSteps={agentSteps} plan={planProgress(run.sections)}
+          reused={run.sections.filter((s) => s.reused).map((s) => s.node)} />
         <ThoughtStream sections={run.sections} lastSeq={run.lastSeq} done={run.done} />
         <ShortlistBoard candidates={candidates} target={campaign.minimum_candidates} />
       </Box>
