@@ -58,16 +58,27 @@ the available API rate limit, and enables search access for authenticated reques
 GitHub public profile URLs are used as candidate sources; private repository data
 and private user information are never accessed.
 
-Set `ANTHROPIC_API_KEY` and optionally `CLAUDE_API_MODEL` for Claude-based JD extraction
-and candidate/evaluation assistance. The default model is `claude-sonnet-4-5`.
-Without provider keys, the system performs no fabrication and reports that live search
-was unavailable.
+`ANTHROPIC_API_KEY` is **required**: Claude understands the job, plans, chooses which tools to call
+and scores candidates. Without it a run stops immediately with an error instead of faking results.
+Defaults: `CLAUDE_API_MODEL=claude-opus-5-5`, `CLAUDE_EFFORT=medium` (`low` to `max`; lower is cheaper
+and faster), `MAX_AGENT_ITERATIONS=12` (cap on agent/tool steps).
 
-The LangGraph search-query stage uses Claude's tool-use feature. Claude receives a
-`search_professional_profiles` tool, requests permitted searches, receives provider
-result summaries, and then returns the final query list. LangGraph executes that tool
-loop and the actual provider calls. The live execution event identifies when Claude
-selected queries using tools.
+## How the agent works (the demo)
+
+The **Live Execution** tab shows the LangGraph run as it happens:
+
+1. **Understand**: Claude extracts structured requirements from the job description.
+2. **Discover tools**: the agent lists the tools it can call.
+3. **Plan**: Claude plans how to use those tools to meet the requirements.
+4. **Act**: a loop of reasoning, tool call and observation (search, read a public profile, record and
+   score a candidate) until enough candidates are scored or searches dry up.
+5. **Report**: Claude writes the recruiter briefing.
+
+Claude's summarized reasoning streams into each step (the "Reasoning" panels), and every tool call
+and its observation is shown. See `docs/langgraph-workflow.md`.
+
+With `SEARCH_PROVIDER=github` the agent uses GitHub user-search qualifiers such as
+`location:malaysia language:csharp`.
 
 ## Demo Scenario
 

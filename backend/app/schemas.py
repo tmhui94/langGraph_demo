@@ -102,5 +102,7 @@ class Campaign(BaseModel):
     candidates: list[Candidate] = Field(default_factory=list)
     evaluations: list[CandidateEvaluation] = Field(default_factory=list)
     events: list[dict[str, Any]] = Field(default_factory=list)
+    plan: list[dict[str, Any]] = Field(default_factory=list)
+    summary: str = ""
     limitation: str = ""
     created_at: datetime = Field(default_factory=datetime.utcnow)

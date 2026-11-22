@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-AI-powered HR sourcing agent: a FastAPI backend runs a LangGraph `StateGraph` that turns a job description into requirements, search queries, sourced public professional profiles, and weighted evaluations. A React/TypeScript/MUI dashboard (`frontend/`) drives it. PostgreSQL stores campaign snapshots.
+A LangGraph **teaching demo**: an AI sourcing agent that understands a job brief, discovers its tools, plans, then loops (reason, call a tool, observe) to find and score public professional profiles, and writes a report. The point is to let an audience *watch the agent think*, so every LLM call streams its summarized reasoning to the UI. FastAPI backend (`backend/`), React/TypeScript/MUI frontend (`frontend/`), PostgreSQL for campaign snapshots.
 
 ## Commands
 
@@ -14,7 +14,7 @@ Full stack (Postgres + backend + frontend):
 docker compose up --build    # UI http://localhost:5173, API docs http://localhost:8000/docs
 ```
 
-Backend local dev (run from `backend/` so `app.*` imports and `.env` resolve):
+Backend local dev (run from `backend/` so `app.*` imports resolve):
 
 ```powershell
 cd backend
@@ -23,44 +23,53 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-Frontend (from `frontend/`): `npm install`, `npm run dev`, `npm run build` (runs `tsc -b` type-check, then `vite build`).
+Frontend (from `frontend/`): `npm install`, `npm run dev`, `npm run build` (runs `tsc -b`, then `vite build`).
 
-There is no test suite, linter, or formatter configured. `npm run build` is the only automated check (TypeScript).
+There is no test suite, linter or formatter. `npm run build` (TypeScript) and compiling the graph are the only automated checks:
+
+```powershell
+cd backend; python -c "from app.graph.workflow import workflow; print(workflow.get_graph().draw_mermaid())"
+```
 
 ### Local-dev gotchas
-- `frontend/vite.config.ts` proxies `/api` to `http://backend:8000` (the Docker service name). When running the frontend outside Docker, that target must be `http://localhost:8000`.
-- `Settings` reads `.env` relative to the working directory; the repo's `.env` is at the root, so a backend started from `backend/` won't see it unless env vars are exported or the file is copied.
-- `backend/alembic.ini` uses an `asyncpg` URL while `alembic/env.py` uses a sync engine. Tables are actually created at startup through `Base.metadata.create_all` in `app/db.py`.
+- `frontend/vite.config.ts` proxies `/api` to `http://backend:8000` (the Docker service name). Outside Docker it must be `http://localhost:8000`.
+- `Settings` reads `.env` relative to the working directory. The repo's `.env` is at the root, so a backend started from `backend/` won't see it. Export the variables, or run from the root with `uvicorn app.main:app --app-dir backend`.
+- Without Postgres, `store.save` still works (DB errors are swallowed) but each save waits for a connection timeout, so runs are slower.
+- `backend/alembic.ini` uses an `asyncpg` URL while `alembic/env.py` uses a sync engine. Tables are actually created at startup via `Base.metadata.create_all` in `app/db.py`.
 
 ## Configuration
 
-All settings are in `backend/app/core/config.py` (pydantic-settings, env var names match the field names uppercased). See `.env.example`. Key ones:
-- `ANTHROPIC_API_KEY`, `CLAUDE_API_MODEL`: enable Claude for JD analysis and the search-planning tool loop.
-- `SEARCH_PROVIDER` (`serper` | `tavily` | `github`), together with `SERPER_API_KEY`, `TAVILY_API_KEY`, and the optional `GITHUB_TOKEN`.
-
-Without keys the system still runs. It uses deterministic fallbacks and reports a `limitation` string. **It must never fabricate candidates.**
+Settings are in `backend/app/core/config.py` (pydantic-settings; env names = field names uppercased). See `.env.example`.
+- `ANTHROPIC_API_KEY` is **required**. There are no deterministic fallbacks: with no key, a run ends in `FAILED` with an `error` event.
+- `CLAUDE_API_MODEL` (default `claude-opus-5-5`), `CLAUDE_EFFORT` (`low`..`max`, default `medium`), `MAX_AGENT_ITERATIONS` (default 12).
+- `SEARCH_PROVIDER` (`serper` | `tavily` | `github`) with the matching key. `github` needs no key (optional `GITHUB_TOKEN` for rate limits).
 
 ## Architecture
 
-Request flow: `POST /api/campaigns` creates a campaign. `POST /api/campaigns/{id}/start` builds the initial `GraphState` and **awaits `workflow.ainvoke` synchronously**, so the request blocks until the whole graph finishes. `GET .../events` is an SSE endpoint, but it only replays the events already stored on the campaign. It does not stream live progress.
+### Run lifecycle
+`POST /api/campaigns/{id}/start` resets the campaign, launches `run_campaign` as a background `asyncio` task (`app/main.py`) and returns immediately. `GET .../events` is Server-Sent Events: it replays stored history, then streams live events until `done`. The UI (`LiveExecution.tsx`) folds those events into per-node cards.
 
 ### LangGraph (`backend/app/graph/workflow.py`)
-- `GraphState` is a `TypedDict`. Only `events` has a reducer (`merge_events`, which appends). Every other key is overwritten by whichever node returns it.
-- Node order: `analyze → generate_queries → source ⇄ expand (conditional count_check) → candidate_intelligence → resume_acquisition → evaluate → quality_assurance → report`.
-- `count_check` stops expanding when any of these holds: the minimum number of candidates is reached, `search_attempts >= retry_limit`, or any provider `limitation` is set.
-- `docs/langgraph-workflow.md` describes a QA→intelligence retry loop and a categorisation node. In the code, `quality_assurance → report` is a plain edge, and categorisation happens inside `evaluate_candidate`. `dispatch_research` (a `Send` fan-out) is defined but not wired into the graph.
-- Nodes have a side effect: they write progress straight to the `store` singleton (`store.get` / `store.save`) and also return state updates. When you change a node, keep both in sync.
-- `extract_candidate` accepts only results from allowlisted hosts (linkedin, github, jobstreet, indeed, glassdoor, and hosts containing "profiles" or "portfolio"). It parses the candidate name from the result title.
-- Scoring is keyword matching against the requirements, weighted by `ScoringWeights`. The total sets the category: ≥80 HIGH, ≥60 MEDIUM, otherwise LOW. Unmet mandatory requirements set `recruiter_review_required` and do **not** auto-reject.
+`understand → discover_tools → plan → agent ⇄ tools → report`.
+- `agent` makes one streamed Claude call with the tool list. `route_after_agent` sends the run to `tools` while Claude emits `tool_use` blocks, and to `report` when it doesn't, hits `MAX_AGENT_ITERATIONS`, or stops with `refusal`/`max_tokens`. Claude decides what to call; the graph only enforces limits.
+- `tools` runs all `tool_use` blocks concurrently and returns **all** results in a single user message (`is_error: True` for failures).
+- `GraphState.messages` holds the Anthropic conversation. Assistant turns are stored exactly as returned (thinking blocks included); don't strip or rewrite them.
+- A node name must not equal a state key (LangGraph raises), which is why the plan is stored as `plan_steps`.
+- `traced(...)` wraps each node to publish `node_start`/`node_end` and update `campaign.status`. The graph is invoked with `recursion_limit=100` because the loop needs more than the default 25 supersteps.
+- Nodes also write progress to the `store` singleton, so keep state updates and `store.save` in sync.
 
-### Services (`backend/app/services/`)
-- `llm.py` calls the Anthropic Messages API directly over `httpx`, without the SDK. `analyze_job_description` asks for JSON and normalizes it with `_string_items`, which forces list entries to strings. `generate_claude_search_plan` runs a tool-use loop of up to 3 turns with a `search_professional_profiles` tool that calls `search_web`. Every Claude path catches exceptions and falls back to deterministic logic.
-- `search.py`: `search_web(query, limit)` returns `(results, limitation)`, where `results` is a list of `{url, title, excerpt}` dicts. The provider is chosen by `SEARCH_PROVIDER` together with whether its key is present.
-- `store.py`: `CampaignStore` uses an **in-memory dict as the source of truth for reads**. It also upserts a JSON snapshot into the `campaign_snapshots` table on each save, and silently swallows DB errors. Campaigns are lost on restart because nothing reloads them from Postgres.
+### Claude access (`backend/app/services/llm.py`)
+`stream_claude(...)` is the single entry point: official `anthropic` SDK, `client.beta.messages.stream`, adaptive thinking with `display: "summarized"` (the default display is empty text, which would hide the reasoning), `output_config.effort`, optional JSON-schema structured output, and `server-side-fallback` so a refusal falls back to another model. It publishes `block_start`, `thinking_delta`, `text_delta` and `block_end` events. Always check the returned `stop_reason`. `strictify()` makes schemas valid for structured outputs and `strict` tools.
 
-### Schemas
-`backend/app/schemas.py` (Pydantic) is mirrored by hand in `frontend/src/api.ts`. Update both when you change the API shape. The frontend is essentially one component, `frontend/src/App.tsx`.
+### Tools (`backend/app/graph/tools.py`)
+One `TOOLS` registry feeds both the API `tools=[...]` (`api_tools()`) and the UI catalog (`catalog()`): `search_professional_profiles`, `fetch_public_profile` (GitHub API or public pages, SSRF-guarded, login walls refused), `record_candidate`, `score_candidate`. Claude supplies per-criterion 0-100 scores and evidence; the server applies `ScoringWeights` and computes the total and band (≥80 HIGH, ≥60 MEDIUM, else LOW). Unmet mandatory requirements set `recruiter_review_required` and never auto-reject. The search tool's description changes with `SEARCH_PROVIDER` (GitHub needs `location:`/`language:` qualifiers). Add a new tool by appending an entry here; the UI picks it up automatically.
+
+### Events (`backend/app/services/events.py`)
+In-process `EventBus`: per-campaign history plus subscriber queues. Token deltas are broadcast live but not stored; the consolidated `block_end` carries the full text for replay. Events are lost on restart, like campaigns.
+
+### Store and schemas
+`CampaignStore` (`services/store.py`) is an in-memory dict that is the source of truth for reads, with best-effort JSON snapshots upserted to Postgres. Nothing reloads from Postgres at startup. `backend/app/schemas.py` is mirrored by hand in `frontend/src/api.ts` (including `AgentEvent`); update both when the API shape changes.
 
 ## Data principles (from README)
 
-Collect professional recruiting info only, from permitted providers. Preserve source URLs and retrieval timestamps (`SourceReference`). Never bypass logins, CAPTCHAs, or access controls. Treat missing evidence as distinct from negative evidence. Human recruiter decisions stay final.
+Collect professional recruiting info only, from permitted providers. Preserve source URLs and retrieval timestamps. Never bypass logins, CAPTCHAs or access controls. Never fabricate candidates; missing evidence is not negative evidence. Human recruiter decisions stay final.

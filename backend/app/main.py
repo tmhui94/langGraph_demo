@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
 from uuid import UUID
 
@@ -11,6 +12,8 @@ from fastapi.responses import StreamingResponse
 from app.core.config import settings
 from app.graph.workflow import workflow
 from app.schemas import Campaign, CampaignCreate
+from app.services.events import bus
+from app.services.llm import LLMNotConfigured
 from app.services.store import store
 from app.db import initialize_database
 
@@ -68,42 +71,56 @@ async def get_campaign(campaign_id: UUID) -> Campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
 
 
-@app.post("/api/campaigns/{campaign_id}/start", response_model=Campaign)
-async def start_campaign(campaign_id: UUID) -> Campaign:
-    try:
-        campaign = store.get(campaign_id)
-    except KeyError:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-
-    weights = campaign.scoring_weights.model_dump()
-    campaign.status = "RUNNING"
-    campaign.events = [{
-        "node": "START",
-        "status": "completed",
-        "detail": "Campaign started",
-    }]
-    store.save(campaign)
+async def run_campaign(campaign: Campaign) -> None:
+    """Run the graph in the background; progress is published to the event bus."""
+    cid = str(campaign.id)
     initial: dict[str, Any] = {
-        "campaign_id": str(campaign.id),
+        "campaign_id": cid,
         "job_title": campaign.job_title,
         "job_description": campaign.job_description,
         "location": campaign.location,
         "minimum_candidates": campaign.minimum_candidates,
         "mandatory": campaign.mandatory_qualifications,
         "preferred": campaign.preferred_qualifications,
-        "weights": weights,
-        "candidates": [],
-        "evaluations": [],
-        "events": [],
-        "search_attempts": 0,
-        "retry_limit": 3,
-        "qa_errors": [],
+        "iterations": 0,
         "limitation": "",
     }
-    final = await workflow.ainvoke(initial)
-    campaign = store.get(campaign_id)
-    campaign.events = initial["events"] + final.get("events", [])
+    try:
+        await workflow.ainvoke(initial, {"recursion_limit": 100})
+    except LLMNotConfigured as exc:
+        campaign.status = "FAILED"
+        campaign.limitation = str(exc)
+        bus.publish(cid, {"type": "error", "node": "start", "detail": str(exc)})
+    except Exception as exc:
+        campaign.status = "FAILED"
+        campaign.limitation = f"{type(exc).__name__}: {exc}"
+        bus.publish(cid, {"type": "error", "node": "start", "detail": campaign.limitation})
+    finally:
+        bus.publish(cid, {"type": "done", "status": campaign.status})
+        campaign.events = bus.history(cid)
+        store.save(campaign)
+
+
+_background: set[asyncio.Task] = set()
+
+
+@app.post("/api/campaigns/{campaign_id}/start", response_model=Campaign)
+async def start_campaign(campaign_id: UUID) -> Campaign:
+    try:
+        campaign = store.get(campaign_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if campaign.status in ("RUNNING", "ANALYZING", "PLANNING", "SOURCING", "REPORTING"):
+        raise HTTPException(status_code=409, detail="Campaign is already running")
+
+    bus.reset(campaign_id)
+    campaign.status = "RUNNING"
+    campaign.candidates, campaign.evaluations = [], []
+    campaign.events, campaign.plan, campaign.summary, campaign.limitation = [], [], "", ""
     store.save(campaign)
+    task = asyncio.create_task(run_campaign(campaign))
+    _background.add(task)  # keep a reference so the task is not garbage collected
+    task.add_done_callback(_background.discard)
     return campaign
 
 
@@ -115,11 +132,33 @@ async def campaign_events(campaign_id: UUID):
         raise HTTPException(status_code=404, detail="Campaign not found")
 
     async def stream():
-        for item in campaign.events:
-            yield f"data: {item}\n\n"
-            await asyncio.sleep(0.05)
+        queue = bus.subscribe(campaign_id)
+        try:
+            # Subscribe first, then replay, so nothing is missed in between.
+            seen = 0
+            finished = False
+            for item in bus.history(campaign_id):
+                seen = max(seen, item["seq"])
+                finished = finished or item["type"] == "done"
+                yield "data: " + json.dumps(item) + chr(10) + chr(10)
+            if finished or campaign.status in ("COMPLETED", "FAILED", "DRAFT"):
+                return
+            while True:
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=15)
+                except asyncio.TimeoutError:
+                    yield ": keep-alive" + chr(10) + chr(10)
+                    continue
+                if item["seq"] <= seen:
+                    continue
+                yield "data: " + json.dumps(item) + chr(10) + chr(10)
+                if item["type"] == "done":
+                    return
+        finally:
+            bus.unsubscribe(campaign_id, queue)
 
-    return StreamingResponse(stream(), media_type="text/event-stream")
+    return StreamingResponse(stream(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.get("/api/campaigns/{campaign_id}/candidates")

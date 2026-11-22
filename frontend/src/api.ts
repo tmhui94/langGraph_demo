@@ -39,5 +39,42 @@ export interface Campaign {
   evaluations: Evaluation[];
   events: { node: string; status: string; detail: string; timestamp: string }[];
   limitation: string;
+  plan: { step: number; tool: string; purpose: string }[];
+  summary: string;
   created_at: string;
+}
+
+export interface AgentEvent {
+  seq: number;
+  type:
+    | "node_start" | "node_end" | "tools_available" | "plan"
+    | "block_start" | "thinking_delta" | "text_delta" | "block_end"
+    | "tool_call" | "tool_result" | "error" | "done";
+  node?: string;
+  step?: number | null;
+  label?: string;
+  block?: number;
+  kind?: "thinking" | "text" | "tool_use";
+  delta?: string;
+  text?: string;
+  id?: string;
+  tool?: string;
+  input?: Record<string, unknown>;
+  is_error?: boolean;
+  content?: string;
+  tools?: { name: string; description: string }[];
+  steps?: { step: number; tool: string; purpose: string }[];
+  detail?: string;
+  status?: string;
+}
+
+/** Subscribe to the live agent event stream. The server replays history first. */
+export function subscribeEvents(id: string, onEvent: (event: AgentEvent) => void): () => void {
+  const source = new EventSource(`/api/campaigns/${id}/events`);
+  source.onmessage = (message) => {
+    const event: AgentEvent = JSON.parse(message.data);
+    onEvent(event);
+    if (event.type === "done") source.close();
+  };
+  return () => source.close();
 }

@@ -7,6 +7,7 @@ import {
 import { DataGrid, GridColDef } from "@mui/x-data-grid";
 import { BarChart, Bar, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api, Campaign, Candidate, Evaluation } from "./api";
+import LiveExecution from "./LiveExecution";
 
 const demoDescription = `Software Engineer in Kajang / Selangor, Malaysia.
 Minimum 3 years of software development experience. Strong C# and .NET experience.
@@ -38,7 +39,7 @@ function Dashboard({ campaigns }: { campaigns: Campaign[] }) {
         <Grid item xs={12} sm={6} md={3}><Metric label="Sourcing campaigns" value={campaigns.length} /></Grid>
         <Grid item xs={12} sm={6} md={3}><Metric label="Candidates discovered" value={candidates.length} /></Grid>
         <Grid item xs={12} sm={6} md={3}><Metric label="Candidates evaluated" value={evaluations.length} /></Grid>
-        <Grid item xs={12} sm={6} md={3}><Metric label="Active sourcing jobs" value={campaigns.filter((item) => item.status === "RUNNING").length} /></Grid>
+        <Grid item xs={12} sm={6} md={3}><Metric label="Active sourcing jobs" value={campaigns.filter((item) => !["DRAFT", "COMPLETED", "FAILED"].includes(item.status)).length} /></Grid>
       </Grid>
       <Card>
         <CardContent>
@@ -79,9 +80,8 @@ function CreateCampaign({ onCreated }: { onCreated: (campaign: Campaign) => void
         location,
         minimum_candidates: minimum,
       });
-      await api.post(`/campaigns/${created.data.id}/start`);
-      const refreshed = await api.get<Campaign>(`/campaigns/${created.data.id}`);
-      onCreated(refreshed.data);
+      const started = await api.post<Campaign>(`/campaigns/${created.data.id}/start`);
+      onCreated(started.data); // the run continues in the background; the Live tab streams it
     } catch (reason: any) {
       setError(reason?.response?.data?.detail || "Could not start the sourcing campaign.");
     } finally {
@@ -99,31 +99,8 @@ function CreateCampaign({ onCreated }: { onCreated: (campaign: Campaign) => void
       <TextField label="Job description" multiline minRows={8} value={description} onChange={(event) => setDescription(event.target.value)} />
       <TextField label="Minimum candidate count" type="number" value={minimum} onChange={(event) => setMinimum(Number(event.target.value))} />
       <Button variant="contained" onClick={submit} disabled={busy} sx={{ alignSelf: "flex-start" }}>
-        Start LangGraph sourcing
+        Start AI agent
       </Button>
-    </Stack>
-  );
-}
-
-function LiveExecution({ campaign }: { campaign?: Campaign }) {
-  if (!campaign) return <Alert severity="info">Create a campaign to observe live LangGraph execution.</Alert>;
-  const nodes = campaign.events || [];
-  return (
-    <Stack spacing={2}>
-      <Typography variant="h5">Live Agent Execution</Typography>
-      <Typography variant="body2" color="text.secondary">Campaign: {campaign.job_title} — {campaign.status}</Typography>
-      {campaign.limitation && <Alert severity="warning">{campaign.limitation}</Alert>}
-      {nodes.map((item, index) => (
-        <Card key={`${item.node}-${index}`} variant="outlined">
-          <CardContent>
-            <Stack direction="row" justifyContent="space-between" alignItems="center">
-              <Typography fontWeight={700}>{item.node}</Typography>
-              <Chip label={item.status} color={item.status === "completed" ? "success" : item.status === "failed" ? "error" : "default"} size="small" />
-            </Stack>
-            {item.detail && <Typography variant="body2" mt={1}>{item.detail}</Typography>}
-          </CardContent>
-        </Card>
-      ))}
     </Stack>
   );
 }
@@ -253,7 +230,7 @@ export default function App() {
       <Container maxWidth="xl" sx={{ py: 3 }}>
         {tab === 0 && <Dashboard campaigns={campaigns} />}
         {tab === 1 && <CreateCampaign onCreated={(campaign) => { setCampaigns((items) => [campaign, ...items.filter((item) => item.id !== campaign.id)]); setTab(2); }} />}
-        {tab === 2 && <LiveExecution campaign={active} />}
+        {tab === 2 && <LiveExecution campaign={active} onDone={load} />}
         {tab === 3 && <CandidateResults campaign={active} />}
       </Container>
     </Box>

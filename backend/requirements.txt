@@ -7,7 +7,7 @@ asyncpg==0.30.0
 psycopg2-binary==2.9.10
 alembic==1.14.0
 langgraph==0.2.60
-langchain==0.3.13
+anthropic>=2.12,<3
 httpx==0.28.1
 beautifulsoup4==4.12.3
 pypdf==5.1.0
