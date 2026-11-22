@@ -3,6 +3,8 @@ import {
   Alert, Box, Card, CardContent, Chip, Collapse, Stack, Step, StepLabel, Stepper, Typography,
 } from "@mui/material";
 import { AgentEvent, Campaign, subscribeEvents } from "./api";
+import AgentFeedback from "./AgentFeedback";
+import ReportView from "./ReportView";
 
 interface Block { kind: string; text: string; done: boolean }
 interface Call { id: string; tool: string; input: Record<string, unknown>; result?: string; isError?: boolean }
@@ -182,6 +184,7 @@ function SectionCard({ section }: { section: Section }) {
               <Typography key={index} component="pre" variant="caption" sx={{ whiteSpace: "pre-wrap" }}>{block.text}</Typography>
             );
             if (section.node === "understand") return <Requirements key={index} text={block.text} />;
+            if (section.node === "report") return <ReportView key={index} markdown={block.text} done={block.done} />;
             return (
               <Typography key={index} sx={{ whiteSpace: "pre-wrap" }}>
                 {section.node === "agent" ? "💬 " : ""}{block.text}
@@ -223,8 +226,9 @@ export default function LiveExecution({ campaign, onDone }: { campaign?: Campaig
   }, [campaignId, draft]);
 
   useEffect(() => {
-    if (!state.done) bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [state.lastSeq, state.done]);
+    // Follow the run live, and scroll once more when the feedback card appears at the end.
+    bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [state.lastSeq, state.done, campaign?.status]);
 
   if (!campaign) return <Alert severity="info">Create a campaign to watch the agent work.</Alert>;
 
@@ -252,6 +256,13 @@ export default function LiveExecution({ campaign, onDone }: { campaign?: Campaig
         <Alert severity="success">
           Done. Open the Candidates tab to review the scored profiles.
         </Alert>
+      )}
+      {state.done && !state.error && campaign.status === "COMPLETED" && (
+        <AgentFeedback
+          key={campaign.id}
+          campaign={campaign}
+          toolsUsed={[...new Set(state.sections.flatMap((s) => s.calls.map((c) => c.tool)))]}
+        />
       )}
       <div ref={bottom} />
     </Stack>

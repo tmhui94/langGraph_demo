@@ -8,6 +8,7 @@ import { DataGrid, GridColDef } from "@mui/x-data-grid";
 import { BarChart, Bar, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api, Campaign, Candidate, Evaluation } from "./api";
 import LiveExecution from "./LiveExecution";
+import { loadAgents, SavedAgent } from "./savedAgents";
 
 const demoDescription = `Software Engineer in Kajang / Selangor, Malaysia.
 Minimum 3 years of software development experience. Strong C# and .NET experience.
@@ -69,6 +70,16 @@ function CreateCampaign({ onCreated }: { onCreated: (campaign: Campaign) => void
   const [minimum, setMinimum] = useState(20);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [agents] = useState<SavedAgent[]>(loadAgents);
+  const [usingAgent, setUsingAgent] = useState<SavedAgent>();
+
+  function applyAgent(agent: SavedAgent) {
+    setJobTitle(agent.jobTitle);
+    setLocation(agent.location);
+    setDescription(agent.jobDescription);
+    setMinimum(agent.minimumCandidates);
+    setUsingAgent(agent);
+  }
 
   async function submit() {
     setBusy(true);
@@ -94,6 +105,43 @@ function CreateCampaign({ onCreated }: { onCreated: (campaign: Campaign) => void
       <Typography variant="h5">Create Sourcing Campaign</Typography>
       {error && <Alert severity="error">{error}</Alert>}
       {busy && <LinearProgress />}
+      {agents.length > 0 && (
+        <Stack spacing={1}>
+          <Typography variant="h6">My agents</Typography>
+          <Grid container spacing={2}>
+            {agents.map((agent) => (
+              <Grid item xs={12} md={6} key={agent.id}>
+                <Card variant="outlined" sx={{ height: "100%", borderColor: usingAgent?.id === agent.id ? "primary.main" : undefined }}>
+                  <CardContent>
+                    <Stack spacing={1}>
+                      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                        <Typography fontWeight={700}>{agent.name}</Typography>
+                        <Chip size="small" label={`v${agent.version}`} />
+                        <Typography variant="body2" color="warning.main">{"★".repeat(agent.rating)}</Typography>
+                      </Stack>
+                      <Typography variant="caption" color="text.secondary">
+                        Last result: {agent.result.found} found · {agent.result.high} HIGH · {agent.result.medium} MEDIUM ·
+                        {" "}{agent.result.low} LOW · plan of {agent.plan.length} steps
+                      </Typography>
+                      <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+                        {agent.toolsUsed.map((tool) => <Chip key={tool} size="small" variant="outlined" label={`🔧 ${tool}`} />)}
+                      </Stack>
+                      <Button size="small" variant="outlined" sx={{ alignSelf: "flex-start" }} onClick={() => applyAgent(agent)}>
+                        Use this agent
+                      </Button>
+                    </Stack>
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+          {usingAgent && (
+            <Alert severity="info">
+              Loaded <strong>{usingAgent.name}</strong> (v{usingAgent.version}). Adjust the inputs if needed, then start.
+            </Alert>
+          )}
+        </Stack>
+      )}
       <TextField label="Job title" value={jobTitle} onChange={(event) => setJobTitle(event.target.value)} />
       <TextField label="Location" value={location} onChange={(event) => setLocation(event.target.value)} />
       <TextField label="Job description" multiline minRows={8} value={description} onChange={(event) => setDescription(event.target.value)} />
