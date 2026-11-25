@@ -112,7 +112,8 @@ function titleOf(s: Section) {
 
 function summaryOf(s: Section, live: boolean): string {
   const base = baseSummary(s, live);
-  return s.reused ? `Reused from the saved agent. ${base}` : base;
+  if (s.reused) return `Reused from the saved agent. ${base}`;
+  return s.adapted ? `Adapted from the saved agent. ${base}` : base;
 }
 
 function baseSummary(s: Section, live: boolean): string {
@@ -142,6 +143,12 @@ function StepBody({ section }: { section: Section }) {
         <Box sx={{ borderLeft: "4px solid var(--high)", pl: 1.75, py: 0.5 }}>
           <Typography fontWeight={600}>No AI call needed</Typography>
           <Typography variant="body2" color="text.secondary">{section.reused} Only the inputs you changed are new.</Typography>
+        </Box>
+      )}
+      {section.adapted && (
+        <Box sx={{ borderLeft: "4px solid var(--medium)", pl: 1.75, py: 0.5 }}>
+          <Typography fontWeight={600}>Adapting to the new role</Typography>
+          <Typography variant="body2" color="text.secondary">{section.adapted} The job title or must-haves changed, so the AI re-thinks this step.</Typography>
         </Box>
       )}
       {section.tools && (

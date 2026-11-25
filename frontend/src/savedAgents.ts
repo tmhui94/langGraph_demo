@@ -65,6 +65,18 @@ export function variablesFrom(requirements: Requirements, campaign: Campaign): A
   ];
 }
 
+const norm = (text: string) => text.trim().toLowerCase();
+const mustHaves = (text: string) => new Set(text.split(",").map(norm).filter(Boolean));
+
+/** True when the job title or must-haves changed, so the saved requirements and plan no longer fit. */
+export function roleChanged(agent: SavedAgent, values: Record<VariableKey, string>): boolean {
+  const saved = Object.fromEntries(agent.variables.map((v) => [v.key, v.value])) as Record<VariableKey, string>;
+  if (norm(values.job_title ?? "") !== norm(saved.job_title ?? "")) return true;
+  const before = mustHaves(saved.mandatory ?? "");
+  const after = mustHaves(values.mandatory ?? "");
+  return before.size !== after.size || [...after].some((m) => !before.has(m));
+}
+
 /** Puts new input values into the saved requirements and plan, ready for a re-run. */
 export function withNewInputs(agent: SavedAgent, values: Record<VariableKey, string>) {
   const old = Object.fromEntries(agent.variables.map((v) => [v.key, v.value])) as Record<VariableKey, string>;

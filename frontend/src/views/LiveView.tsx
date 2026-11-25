@@ -36,7 +36,7 @@ export default function LiveView({ campaign, run, onResults }: {
       <Stack direction={{ xs: "column", md: "row" }} spacing={{ xs: 2, md: 6 }} justifyContent="space-between" alignItems={{ md: "flex-end" }}>
         <Box sx={{ minWidth: 0 }}>
           <Typography variant="h3" sx={{ fontSize: { xs: "1.7rem", md: "2.2rem" } }}>{title}</Typography>
-          <Typography color="text.secondary">{location}{campaign.reused ? " (saved agent)" : ""}</Typography>
+          <Typography color="text.secondary">{location}{campaign.reused ? " (saved agent)" : campaign.adapted ? " (saved agent, adapted)" : ""}</Typography>
         </Box>
         <Stack direction="row" spacing={4}>
           <Stat label="Elapsed" value={clock(elapsed)} />

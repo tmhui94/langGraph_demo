@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Alert, Box, Button, Chip, LinearProgress, Stack, TextField, Typography } from "@mui/material";
 import { api, Campaign } from "../api";
 import { toolLabel } from "../labels";
-import { loadAgents, SavedAgent, VariableKey, withNewInputs } from "../savedAgents";
+import { loadAgents, roleChanged, SavedAgent, VariableKey, withNewInputs } from "../savedAgents";
 
 const demoPrompt = `Find 5 software engineers near Kajang, Selangor, Malaysia.
 They need at least 3 years of experience and strong C# and .NET.
@@ -35,6 +35,9 @@ function AgentPanel({ agent, busy, onRun }: {
               helperText={v.key === "mandatory" ? "Separate with commas" : undefined}
               onChange={(e) => setValues({ ...values, [v.key]: e.target.value })} />
           ))}
+          {roleChanged(agent, values) && (
+            <Typography variant="body2" color="warning.main">Role changed: the agent will re-think its requirements and plan.</Typography>
+          )}
           <Button variant="contained" size="large" disabled={busy || !values.job_title.trim()}
             onClick={() => onRun(values)} sx={{ alignSelf: "flex-start", px: 4 }}>
             {busy ? "Starting..." : "Run this agent"}
@@ -77,13 +80,16 @@ export default function PromptView({ onStarted }: { onStarted: (campaign: Campai
 
   function runAgent(agent: SavedAgent, values: Record<VariableKey, string>) {
     const { requirements, plan, count } = withNewInputs(agent, values);
+    const adapt = roleChanged(agent, values);
     run({
       job_title: requirements.job_title,
       location: requirements.location,
-      job_description: `Re-run of the saved agent "${agent.name}".`,
+      // An adapted run re-reads the brief, so send the original one for context.
+      job_description: adapt ? agent.prompt : `Re-run of the saved agent "${agent.name}".`,
       minimum_candidates: count,
       saved_requirements: requirements,
       saved_plan: plan,
+      adapt,
     });
   }
 

@@ -56,6 +56,7 @@ export interface Campaign {
   summary: string;
   requirements?: Requirements | null;
   reused?: boolean;
+  adapted?: boolean;
   created_at: string;
 }
 
@@ -65,7 +66,7 @@ export interface AgentEvent {
   type:
     | "node_start" | "node_end" | "tools_available" | "plan"
     | "block_start" | "thinking_delta" | "text_delta" | "block_end"
-    | "tool_call" | "tool_result" | "reused" | "error" | "done";
+    | "tool_call" | "tool_result" | "reused" | "adapted" | "error" | "done";
   node?: string;
   step?: number | null;
   label?: string;
