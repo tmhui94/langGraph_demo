@@ -74,6 +74,9 @@ and faster), `MAX_AGENT_ITERATIONS=12` (cap on agent/tool steps).
 Saved agents appear under **My agents** on the Prompt step (stored in the browser). Running one sends the
 saved requirements and plan to the backend (`saved_requirements`, `saved_plan`), so the Understand and
 Plan steps are reused with **no AI call**. Only the search loop and the report use the AI again.
+If you change the **job title or must-haves**, the saved steps no longer fit the role, so the run is
+**adapted** instead: Understand and Plan call the AI again, starting from the saved versions (`adapt: true`).
+Changing only the location or the number of candidates keeps the full reuse.
 
 ## How the agent works (the demo)
 
