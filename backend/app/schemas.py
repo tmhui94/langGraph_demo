@@ -34,6 +34,8 @@ class CampaignCreate(BaseModel):
     # Re-running a saved agent: reuse its requirements and plan instead of asking the AI again.
     saved_requirements: "JobRequirements | None" = None
     saved_plan: list[dict[str, Any]] | None = None
+    # The job title or must-haves changed: re-run Understand and Plan, seeded with the saved ones.
+    adapt: bool = False
 
 
 class JobRequirements(BaseModel):
@@ -111,6 +113,7 @@ class Campaign(BaseModel):
     summary: str = ""
     limitation: str = ""
     reused: bool = False
+    adapted: bool = False
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 

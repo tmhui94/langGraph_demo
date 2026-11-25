@@ -116,6 +116,7 @@ class GraphState(TypedDict, total=False):
     iterations: int
     limitation: str
     reused: bool
+    adapted: bool
 
 
 def traced(name: str):
@@ -142,6 +143,16 @@ def traced(name: str):
 
 
 REUSED_NOTE = "Reused from the saved agent, so no AI call was needed."
+ADAPTED_NOTE = "Adapting the saved agent to the new inputs."
+
+ADAPT_UNDERSTAND = (
+    "The recruiter changed the inputs of a saved search. Rewrite the requirements for the new "
+    "inputs. Drop skills, titles and industries that only fit the old role; keep what still applies."
+)
+ADAPT_PLAN = (
+    "Adapt the previous plan to these requirements. Keep its structure where it still fits; "
+    "change searches and steps that targeted the old role."
+)
 
 
 def apply_variables(state: GraphState, requirements: JobRequirements) -> dict:
@@ -171,16 +182,30 @@ async def understand_node(state: GraphState) -> dict:
                           "text": json.dumps(requirements.model_dump(exclude={"search_queries"}))})
         return apply_variables(state, requirements)
 
-    message = await stream_claude(
-        cid, "understand",
-        system=UNDERSTAND_SYSTEM,
-        messages=[{"role": "user", "content": json.dumps({
+    seed = store.get(UUID(cid)).requirements if state.get("adapted") else None
+    if seed is not None:
+        bus.publish(cid, {"type": "adapted", "node": "understand", "detail": ADAPTED_NOTE})
+        typed = {"job_title": seed.job_title, "location": seed.location,
+                 "candidates_wanted": seed.candidates_wanted, "mandatory": seed.mandatory}
+        content = {
+            "instruction": ADAPT_UNDERSTAND,
+            "original_brief": state["job_description"],
+            "saved_requirements": seed.model_dump(exclude={"search_queries"}),
+            "new_inputs": typed,
+        }
+    else:
+        content = {
             "job_title": state["job_title"],
             "location": state["location"],
             "job_description": state["job_description"],
             "recruiter_mandatory": state["mandatory"],
             "recruiter_preferred": state["preferred"],
-        })}],
+        }
+
+    message = await stream_claude(
+        cid, "understand",
+        system=UNDERSTAND_SYSTEM,
+        messages=[{"role": "user", "content": json.dumps(content)}],
         output_schema=REQUIREMENTS_SCHEMA,
         max_tokens=16000,
     )
@@ -188,6 +213,8 @@ async def understand_node(state: GraphState) -> dict:
         raise RuntimeError(f"Could not extract requirements (stop_reason={message.stop_reason})")
     data = json_of(message)
     data["job_title"] = data.get("job_title") or state["job_title"]
+    if seed is not None:
+        data.update(typed)  # the inputs the recruiter typed always win
     return apply_variables(state, JobRequirements(**data))
 
 
@@ -209,15 +236,21 @@ async def plan_node(state: GraphState) -> dict:
         bus.publish(cid, {"type": "plan", "node": "plan", "steps": plan})
         return first_agent_turn(state, requirements, plan)
 
+    content = {
+        "requirements": requirements.model_dump(exclude={"search_queries"}),
+        "location": state["location"],
+        "minimum_candidates": state["minimum_candidates"],
+        "tools": catalog(),
+    }
+    if state.get("adapted"):
+        bus.publish(cid, {"type": "adapted", "node": "plan", "detail": ADAPTED_NOTE})
+        content["instruction"] = ADAPT_PLAN
+        content["previous_plan"] = store.get(UUID(cid)).plan
+
     message = await stream_claude(
         cid, "plan",
         system=PLAN_SYSTEM,
-        messages=[{"role": "user", "content": json.dumps({
-            "requirements": requirements.model_dump(exclude={"search_queries"}),
-            "location": state["location"],
-            "minimum_candidates": state["minimum_candidates"],
-            "tools": catalog(),
-        })}],
+        messages=[{"role": "user", "content": json.dumps(content)}],
         output_schema=PLAN_SCHEMA,
         max_tokens=16000,
     )
