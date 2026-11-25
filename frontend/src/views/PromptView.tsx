@@ -84,8 +84,9 @@ export default function PromptView({ onStarted }: { onStarted: (campaign: Campai
     run({
       job_title: requirements.job_title,
       location: requirements.location,
-      // An adapted run re-reads the brief, so send the original one for context.
-      job_description: adapt ? agent.prompt : `Re-run of the saved agent "${agent.name}".`,
+      // Always carry the original brief: an adapted run re-reads it, and an agent saved
+      // from this run keeps it as its own prompt.
+      job_description: agent.prompt,
       minimum_candidates: count,
       saved_requirements: requirements,
       saved_plan: plan,
