@@ -41,7 +41,7 @@ cd backend; python -c "from app.graph.workflow import workflow; print(workflow.g
 
 Settings are in `backend/app/core/config.py` (pydantic-settings; env names = field names uppercased). See `.env.example`.
 - `ANTHROPIC_API_KEY` is **required**. There are no deterministic fallbacks: with no key, a run ends in `FAILED` with an `error` event.
-- `CLAUDE_API_MODEL` (default `claude-opus-5-5`), `CLAUDE_EFFORT` (`low`..`max`, default `medium`), `MAX_AGENT_ITERATIONS` (default 12).
+- `CLAUDE_API_MODEL` (default `claude-opus-5-5`), `CLAUDE_EFFORT` (`low`..`max`, default `medium`), `MAX_AGENT_ITERATIONS` (default 40), `MAX_SEARCH_RETRIES` (default 4).
 - `SEARCH_PROVIDER` (`serper` | `tavily` | `github`) with the matching key. `github` needs no key (optional `GITHUB_TOKEN` for rate limits).
 
 ## Architecture
@@ -51,7 +51,7 @@ Settings are in `backend/app/core/config.py` (pydantic-settings; env names = fie
 
 ### LangGraph (`backend/app/graph/workflow.py`)
 `understand → discover_tools → plan → agent ⇄ tools → report`.
-- `agent` makes one streamed Claude call with the tool list. `route_after_agent` sends the run to `tools` while Claude emits `tool_use` blocks, and to `report` when it doesn't, hits `MAX_AGENT_ITERATIONS`, or stops with `refusal`/`max_tokens`. Claude decides what to call; the graph only enforces limits.
+- `agent` makes one streamed Claude call with the tool list. `route_after_agent` sends the run to `tools` while Claude emits `tool_use` blocks, and to `report` when it hits `MAX_AGENT_ITERATIONS` or stops with `refusal`/`max_tokens`. When Claude wraps up (no `tool_use`) with fewer scored candidates than `minimum_candidates`, the run loops back to `agent`: it publishes a `retry` event and appends a user nudge listing the queries already run, so Claude rephrases the searches. It goes to `report` only once the target is met or `MAX_SEARCH_RETRIES` rounds in a row score nobody new. Claude decides what to call; the graph enforces the target and limits.
 - `tools` runs all `tool_use` blocks concurrently and returns **all** results in a single user message (`is_error: True` for failures).
 - `GraphState.messages` holds the Anthropic conversation. Assistant turns are stored exactly as returned (thinking blocks included); don't strip or rewrite them.
 - A node name must not equal a state key (LangGraph raises), which is why the plan is stored as `plan_steps`.

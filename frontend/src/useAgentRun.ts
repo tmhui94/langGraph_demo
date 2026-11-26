@@ -21,6 +21,7 @@ export interface Section {
   plan?: { step: number; tool: string; purpose: string }[];
   reused?: string;
   adapted?: string;
+  retry?: string;
 }
 export interface RunState {
   sections: Section[];
@@ -79,6 +80,7 @@ export function reducer(state: RunState, action: AgentEvent | { type: "reset" })
     case "plan": section.plan = e.steps; break;
     case "reused": section.reused = e.detail; break;
     case "adapted": section.adapted = e.detail; break;
+    case "retry": section.retry = e.detail; break;
     case "block_start":
       if (e.kind !== "tool_use") section.blocks[e.block!] = { kind: e.kind!, text: "", done: false };
       break;

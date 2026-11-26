@@ -61,7 +61,8 @@ and private user information are never accessed.
 `ANTHROPIC_API_KEY` is **required**: Claude understands the job, plans, chooses which tools to call
 and scores candidates. Without it a run stops immediately with an error instead of faking results.
 Defaults: `CLAUDE_API_MODEL=claude-opus-5-5`, `CLAUDE_EFFORT=medium` (`low` to `max`; lower is cheaper
-and faster), `MAX_AGENT_ITERATIONS=12` (cap on agent/tool steps).
+and faster), `MAX_AGENT_ITERATIONS=40` (cap on agent/tool steps), `MAX_SEARCH_RETRIES=4` (retry rounds in a
+row that find nobody new before the agent may stop short of the requested candidate count).
 
 ## Demo flow: Prompt, Live, Results
 

@@ -151,6 +151,12 @@ function StepBody({ section }: { section: Section }) {
           <Typography variant="body2" color="text.secondary">{section.adapted} The job title or must-haves changed, so the AI re-thinks this step.</Typography>
         </Box>
       )}
+      {section.retry && (
+        <Box sx={{ borderLeft: "4px solid var(--medium)", pl: 1.75, py: 0.5 }}>
+          <Typography fontWeight={600}>Target not met yet</Typography>
+          <Typography variant="body2" color="text.secondary">{section.retry}</Typography>
+        </Box>
+      )}
       {section.tools && (
         <Stack spacing={0.75}>
           {section.tools.map((t) => (

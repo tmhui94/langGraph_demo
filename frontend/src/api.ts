@@ -66,7 +66,7 @@ export interface AgentEvent {
   type:
     | "node_start" | "node_end" | "tools_available" | "plan"
     | "block_start" | "thinking_delta" | "text_delta" | "block_end"
-    | "tool_call" | "tool_result" | "reused" | "adapted" | "error" | "done";
+    | "tool_call" | "tool_result" | "reused" | "adapted" | "retry" | "error" | "done";
   node?: string;
   step?: number | null;
   label?: string;

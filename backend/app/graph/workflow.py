@@ -56,8 +56,20 @@ AGENT_SYSTEM = (
     "- Unmet mandatory requirements mean 'recruiter review', not rejection.\n"
     "- Before each tool call, say in one short sentence what you are about to do and why.\n"
     "- Record each promising candidate with record_candidate, then score it with score_candidate.\n"
-    "- Stop calling tools once the minimum number of candidates is scored, or when searches stop "
-    "yielding new people. Then reply with a brief wrap-up (no more tool calls)."
+    "- The requested number of candidates is a hard target. Keep searching until that many are "
+    "scored. When a search returns nothing new, do not give up: rephrase it with alternative job "
+    "titles, synonyms, individual skills or tools, seniority variants, or a broader or nearby "
+    "location. Never repeat a query you already ran.\n"
+    "- Only once the target is scored, reply with a brief wrap-up (no more tool calls)."
+)
+
+RETRY_NOTE = "Only {scored} of {target} candidates scored, so the agent searches again with new wording."
+
+RETRY_PROMPT = (
+    "You have scored {scored} of the {target} candidates required, so you are not done. Keep "
+    "sourcing. Try search wording you have not used yet: alternative job titles, synonyms, single "
+    "key skills or tools, seniority variants (junior, senior, lead), or a broader or nearby location. "
+    "Queries already run (do not repeat them): {queries}"
 )
 
 REPORT_SYSTEM = (
@@ -114,6 +126,8 @@ class GraphState(TypedDict, total=False):
     plan_steps: list[dict[str, Any]]
     messages: list[dict[str, Any]]
     iterations: int
+    retries: int  # retry rounds in a row that scored nobody new
+    scored_at_retry: int
     limitation: str
     reused: bool
     adapted: bool
@@ -276,22 +290,51 @@ def first_agent_turn(state: GraphState, requirements: JobRequirements, plan: lis
             "plan": plan,
         }),
     }
-    return {"plan_steps": plan, "messages": [first], "iterations": 0}
+    return {"plan_steps": plan, "messages": [first], "iterations": 0,
+            "retries": 0, "scored_at_retry": 0}
+
+
+def scored_count(state: GraphState) -> int:
+    return len(store.get(UUID(state["campaign_id"])).evaluations)
+
+
+def queries_run(messages: list[dict[str, Any]]) -> list[str]:
+    return [
+        str(b.input.get("query", ""))
+        for m in messages if m["role"] == "assistant"
+        for b in m["content"]
+        if getattr(b, "type", None) == "tool_use" and b.name == "search_professional_profiles"
+    ]
 
 
 @traced("agent")
 async def agent_node(state: GraphState) -> dict:
+    cid = state["campaign_id"]
     step = state.get("iterations", 0) + 1
+    messages = state["messages"]
+    update: dict[str, Any] = {}
+    if messages[-1]["role"] == "assistant":
+        # The agent tried to wrap up short of the target: send it back to search again.
+        scored, target = scored_count(state), state["minimum_candidates"]
+        progressed = scored > state.get("scored_at_retry", 0)
+        update["retries"] = 1 if progressed else state.get("retries", 0) + 1
+        update["scored_at_retry"] = scored
+        bus.publish(cid, {"type": "retry", "node": "agent", "step": step,
+                          "detail": RETRY_NOTE.format(scored=scored, target=target)})
+        nudge = RETRY_PROMPT.format(scored=scored, target=target,
+                                    queries=json.dumps(queries_run(messages)))
+        messages = messages + [{"role": "user", "content": nudge}]
+
     message = await stream_claude(
-        state["campaign_id"], "agent",
+        cid, "agent",
         system=AGENT_SYSTEM,
-        messages=state["messages"],
+        messages=messages,
         tools=api_tools(),
         step=step,
     )
-    update: dict[str, Any] = {
+    update |= {
         # Keep the assistant turn exactly as returned (thinking blocks included).
-        "messages": state["messages"] + [{"role": "assistant", "content": message.content}],
+        "messages": messages + [{"role": "assistant", "content": message.content}],
         "iterations": step,
     }
     if message.stop_reason in ("refusal", "max_tokens"):
@@ -299,14 +342,19 @@ async def agent_node(state: GraphState) -> dict:
     return update
 
 
-def route_after_agent(state: GraphState) -> Literal["tools", "report"]:
+def route_after_agent(state: GraphState) -> Literal["tools", "agent", "report"]:
     last = state["messages"][-1]["content"]
     wants_tools = any(getattr(b, "type", None) == "tool_use" for b in last)
-    if state.get("limitation") or not wants_tools:
+    if state.get("limitation") or state["iterations"] >= settings.max_agent_iterations:
         return "report"
-    if state["iterations"] >= settings.max_agent_iterations:
-        return "report"
-    return "tools"
+    if wants_tools:
+        return "tools"
+    # Claude wants to wrap up. The candidate count is a hard target, so loop back unless it is met
+    # or retries keep finding nobody new.
+    short = scored_count(state) < state["minimum_candidates"]
+    if short and state.get("retries", 0) < settings.max_search_retries:
+        return "agent"
+    return "report"
 
 
 @traced("tools")
@@ -352,6 +400,10 @@ async def report_node(state: GraphState) -> dict:
     note = state.get("limitation", "")
     if state.get("iterations", 0) >= settings.max_agent_iterations:
         note = (note + " Reached the agent step limit.").strip()
+    if len(campaign.evaluations) < campaign.minimum_candidates:
+        note = (note + f" Only {len(campaign.evaluations)} of the {campaign.minimum_candidates} "
+                f"requested candidates were found after {len(queries_run(state['messages']))} "
+                "searches with varied wording.").strip()
     message = await stream_claude(
         cid, "report",
         system=REPORT_SYSTEM,
@@ -383,7 +435,7 @@ def build_graph():
     graph.add_edge("understand", "discover_tools")
     graph.add_edge("discover_tools", "plan")
     graph.add_edge("plan", "agent")
-    graph.add_conditional_edges("agent", route_after_agent, {"tools": "tools", "report": "report"})
+    graph.add_conditional_edges("agent", route_after_agent, {"tools": "tools", "agent": "agent", "report": "report"})
     graph.add_edge("tools", "agent")
     graph.add_edge("report", END)
     return graph.compile()
